@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Winter Watch — County Cavan</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; max-width: 780px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; color: #1f2937; background: #f8fafc; }
+    h1 { margin-bottom: 0.25rem; }
+    .subtitle { color: #4b5563; margin-top: 0; margin-bottom: 1.5rem; }
+    .card { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 1.25rem; margin-bottom: 1.25rem; }
+    .card h2 { margin-top: 0; font-size: 1.1rem; }
+    label { display: block; font-weight: 600; margin-top: 0.75rem; font-size: 0.9rem; }
+    input, select, textarea { width: 100%; padding: 0.55rem; margin-top: 0.25rem; border: 1px solid #94a3b8; border-radius: 6px; box-sizing: border-box; font-size: 0.95rem; }
+    .row { display: flex; gap: 0.5rem; margin-top: 0.85rem; flex-wrap: wrap; }
+    button { padding: 0.55rem 1rem; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; background: #1d4ed8; color: #ffffff; }
+    button:hover { background: #1e40af; }
+    button.secondary { background: #e2e8f0; color: #1e293b; }
+    button.secondary:hover { background: #cbd5e1; }
+    .status { font-size: 0.85rem; color: #047857; margin-top: 0.5rem; min-height: 1.2em; }
+    #reply { white-space: pre-wrap; background: #f1f5f9; padding: 1rem; border-radius: 6px; margin-top: 0.75rem; min-height: 3rem; }
+    #usage { font-size: 0.85rem; color: #475569; margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+  <h1>Winter Watch</h1>
+  <p class="subtitle">County Cavan Roads Team — Decision-Support Tool</p>
+
+  <!-- Settings Box -->
+  <div class="card">
+    <h2>AI Settings (saved in this browser only)</h2>
+
+    <label for="provider">AI Provider</label>
+    <select id="provider">
+      <option value="groq">Groq</option>
+      <option value="gemini">Google Gemini</option>
+      <option value="openai">OpenAI</option>
+      <option value="anthropic">Anthropic (Claude)</option>
+    </select>
+
+    <label for="model">Model Name (check your provider's docs if needed)</label>
+    <input type="text" id="model" placeholder="e.g. openai/gpt-oss-20b" />
+
+    <label for="apiKey">API Key</label>
+    <input type="password" id="apiKey" placeholder="Paste your key here..." />
+
+    <div class="row">
+      <button id="saveBtn">Save</button>
+      <button id="forgetBtn" class="secondary">Forget key</button>
+    </div>
+    <div id="settingsStatus" class="status"></div>
+  </div>
+
+  <!-- Question Box -->
+  <div class="card">
+    <h2>Ask Your AI Brain</h2>
+    <label for="question">Question</label>
+    <textarea id="question" rows="3" placeholder="Ask a test question, e.g. Say hello and tell me what County Cavan's winter roads team does."></textarea>
+    <div class="row">
+      <button id="askBtn">Ask</button>
+    </div>
+    <div id="reply">Your answer will appear here.</div>
+    <div id="usage"></div>
+  </div>
+
+  <script>
+    const defaultModels = {
+      groq: "openai/gpt-oss-20b",
+      gemini: "gemini-3.5-flash-lite",
+      openai: "gpt-6-luna",
+      anthropic: "claude-haiku-5-5"
+    };
+
+    const providerEl = document.getElementById("provider");
+    const modelEl = document.getElementById("model");
+    const keyEl = document.getElementById("apiKey");
+    const statusEl = document.getElementById("settingsStatus");
+    const replyEl = document.getElementById("reply");
+    const usageEl = document.getElementById("usage");
+
+    // Load saved settings from this browser's localStorage
+    function loadSettings() {
+      const savedProvider = localStorage.getItem("ww_provider") || "groq";
+      const savedModel = localStorage.getItem("ww_model") || defaultModels[savedProvider];
+      const savedKey = localStorage.getItem("ww_api_key") || "";
+
+      providerEl.value = savedProvider;
+      modelEl.value = savedModel;
+      keyEl.value = savedKey;
+      if (savedKey) statusEl.textContent = "Key loaded from this browser.";
+    }
+
+    // Update default model when switching provider
+    providerEl.addEventListener("change", () => {
+      modelEl.value = defaultModels[providerEl.value];
+    });
+
+    // Save settings to localStorage
+    document.getElementById("saveBtn").addEventListener("click", () => {
+      localStorage.setItem("ww_provider", providerEl.value);
+      localStorage.setItem("ww_model", modelEl.value.trim());
+      localStorage.setItem("ww_api_key", keyEl.value.trim());
+      statusEl.textContent = "Saved in this browser only (never uploaded to GitHub).";
+    });
+
+    // Forget key
+    document.getElementById("forgetBtn").addEventListener("click", () => {
+      localStorage.removeItem("ww_api_key");
+      keyEl.value = "";
+      statusEl.textContent = "API key forgotten from this browser.";
+    });
+
+    // Send question directly to the selected provider
+    document.getElementById("askBtn").addEventListener("click", async () => {
+      const provider = providerEl.value;
+      const model = modelEl.value.trim();
+      const apiKey = keyEl.value.trim();
+      const question = document.getElementById("question").value.trim();
+
+      if (!apiKey) {
+        replyEl.textContent = "Please paste your API key in Settings and click Save first.";
+        return;
+      }
+      if (!question) {
+        replyEl.textContent = "Please enter a question.";
+        return;
+      }
+
+      replyEl.textContent = "Thinking...";
+      usageEl.textContent = "";
+
+      try {
+        let answer = "";
+        let usageText = "";
+
+        if (provider === "openai" || provider === "groq") {
+          const url = provider === "openai"
+            ? "https://api.openai.com/v1/chat/completions"
+            : "https://api.groq.com/openai/v1/chat/completions";
+
+          const res = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+              model,
+              messages: [{ role: "user", content: question }]
+            })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error?.message || JSON.stringify(data));
+          answer = data.choices[0].message.content;
+          if (data.usage) {
+            usageText = `Tokens used — Input: ${data.usage.prompt_tokens}, Output: ${data.usage.completion_tokens}, Total: ${data.usage.total_tokens}`;
+          }
+        } else if (provider === "anthropic") {
+          const res = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": apiKey,
+              "anthropic-version": "2023-06-01",
+              "anthropic-dangerous-direct-browser-access": "true"
+            },
+            body: JSON.stringify({
+              model,
+              max_tokens: 1024,
+              messages: [{ role: "user", content: question }]
+            })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error?.message || JSON.stringify(data));
+          answer = data.content[0].text;
+          if (data.usage) {
+            usageText = `Tokens used — Input: ${data.usage.input_tokens}, Output: ${data.usage.output_tokens}`;
+          }
+        } else if (provider === "gemini") {
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+          const res = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-goog-api-key": apiKey
+            },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: question }] }]
+            })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error?.message || JSON.stringify(data));
+          answer = data.candidates[0].content.parts[0].text;
+          if (data.usageMetadata) {
+            usageText = `Tokens used — Input: ${data.usageMetadata.promptTokenCount}, Output: ${data.usageMetadata.candidatesTokenCount}, Total: ${data.usageMetadata.totalTokenCount}`;
+          }
+        }
+
+        replyEl.textContent = answer;
+        usageEl.textContent = usageText;
+      } catch (err) {
+        replyEl.textContent = "Error: " + err.message;
+      }
+    });
+
+    loadSettings();
+  </script>
+</body>
+</html>
